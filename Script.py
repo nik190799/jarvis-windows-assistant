@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdi
 import openai
 import json
 
-openai.api_key = "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"
+openai.api_key = OPENAI_API_KEY
 
 class AIAssistantUI(QWidget):
     def __init__(self):
