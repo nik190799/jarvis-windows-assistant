@@ -9,7 +9,7 @@ Task automation: Executes commands on the user's machine based on the assistant'
 Task distribution: Distributes tasks evenly among multiple developers and handles their responses.
 
 ## Usage
-Launch the application by running the jarvis_windows_assistant.py script.
+Launch the application by running the Jarvis.py script.
 Type your query in the input box and press Enter or click the "Send" button.
 The assistant will process your query, perform the requested task(s), and display the response in the response area.
 Contributions
