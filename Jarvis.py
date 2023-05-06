@@ -1,8 +1,8 @@
 import sys
 import os
 import subprocess
-from PyQt5.QtCore import Qt, QEvent, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton
+from PyQt5.QtCore import Qt, QEvent, pyqtSignal, pyqtSlot, QThread
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton, QProgressDialog, QHBoxLayout
 import openai
 import json
 import ast
@@ -12,15 +12,24 @@ import time
 openai.api_key = YOUR_OPENAI_API_KEY
 num_devs = 2
 
+class GetTasksValueThread(QThread):
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+
+    def run(self):
+        self.parent.get_tasks_value()
+
 class AIAssistantUI(QWidget):
     update_text_signal = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
-        self.current_directory = os.getcwd()
-        self.default_manager_path = 'Path/To/Json/Windows Assistant/ModelDatasets/messages_android.json'
-        self.default_dev1_path = 'Path/To/Json/Windows Assistant/ModelDatasets/dev1.json'
-        self.default_dev2_path = 'Path/To/Json/Windows Assistant/ModelDatasets/dev2.json'
+        #self.current_directory = os.getcwd()
+        self.current_directory = 'test\\GPT'
+        self.default_manager_path = 'test/Windows Assistant/ModelDatasets/messages_android.json'
+        self.default_dev1_path = 'test/Windows Assistant/ModelDatasets/cmdDev1.json'
+        self.default_dev2_path = 'test/Windows Assistant/ModelDatasets/cmdDev1.json'
         self.init_ui()
         
         self.running = True
@@ -28,9 +37,53 @@ class AIAssistantUI(QWidget):
         
         self.update_text_signal.connect(self.update_text)
         self.start_get_tasks_value_thread()
+        
+        
+    def init_ui(self):
+        # Set up the layout and components
+        main_layout = QVBoxLayout()
+
+        title = QLabel("AI Assistant")
+        main_layout.addWidget(title)
+
+        response_label = QLabel("Assistant's response:")
+        main_layout.addWidget(response_label)
+
+        self.text_response = QTextEdit()
+        self.text_response.setReadOnly(True)
+        main_layout.addWidget(self.text_response)
+
+        input_layout = QHBoxLayout()
+
+        input_label = QLabel("Enter your query:")
+        input_layout.addWidget(input_label)
+
+        self.text_input = QLineEdit()
+        input_layout.addWidget(self.text_input)
+        self.text_input.installEventFilter(self)  # Install event filter to listen for Enter key press
+
+        send_button = QPushButton("Send")
+        input_layout.addWidget(send_button)
+        send_button.clicked.connect(self.send_query)
+
+        main_layout.addLayout(input_layout)
+        self.setLayout(main_layout)
+        self.setWindowTitle("Jarvis")
+        self.setGeometry(500, 500, 600, 500)
+        
+    def formatDirectoryLocation(self, command):
+        replaced_command = command.replace('root190799', self.current_directory)
+        replaced_command = replaced_command.replace('\\','////')
+        replaced_command = replaced_command.replace('////',chr(92))
+        
+        return replaced_command
+
     
     def closeEvent(self, event):
         self.running = False  # Set the flag to False when closing the application
+        
+        self.get_tasks_value_thread.wait()
+
         super().closeEvent(event)
         
     def distribute_tasks(self, content, num_devs):
@@ -54,14 +107,30 @@ class AIAssistantUI(QWidget):
         elements = self.load_messages(dev_id)
         elements.append({"role": "user", "content": str(new_item)})
         self.save_messages(dev_id, elements)
-        print(f"adding dev{dev_id} user inputs...")
-        time.sleep(2)
         
-        print(f"waiting for dev{dev_id} response...")
+        self.text_response.append(f"adding dev{dev_id} user inputs...")
+        
         response = self.get_response(dev_id, str(new_item))
+        
         elements.append({"role": "assistant", "content": response})
         self.save_messages(dev_id, elements)
-        time.sleep(2)
+        self.text_response.append(f"dev{dev_id} tasks completed...")
+        
+        commands = ast.literal_eval(response)
+        
+        print(type(commands))
+        print(commands)
+        
+        for command in commands:
+            replaced_command = self.formatDirectoryLocation(command['location'])
+
+            if command['code'] != 'No code required':
+                for line in command['code'].split('\n'):
+                    with open(replaced_command, 'a') as file:
+                        file.write(line)
+            else:
+                self.run_command(command['fileType'],replaced_command)
+
         
     @pyqtSlot(str)
     def update_text(self, text):
@@ -74,7 +143,7 @@ class AIAssistantUI(QWidget):
             if elements_manager[-1]['role'] == 'assistant':
                 content = ast.literal_eval(elements_manager[-1]['content'])
                 if content['status'] == 0:
-                    print((len(content['tasks'])))
+                    self.text_response.append(f"Total {len(content['tasks'])} tasks created.")
                     self.user_inputs_handler = False
                     
                     # Call the distribute_tasks function
@@ -84,18 +153,16 @@ class AIAssistantUI(QWidget):
                     
                     self.save_messages(0, elements_manager)
                     
-                    print("Exit...")
-                    
                 else:
-                    print("No Tasks at the moment!")
+                    print("No user input...")
     
                 self.user_inputs_handler = True
-            print("waiting 5 sec...")
             time.sleep(5)
     
     def start_get_tasks_value_thread(self):
-        get_tasks_value_thread = threading.Thread(target=self.get_tasks_value)
-        get_tasks_value_thread.start()
+        self.get_tasks_value_thread = GetTasksValueThread(self)
+        self.get_tasks_value_thread.start()
+
         
     def save_messages(self, user_id, messages):
         if user_id == 0:
@@ -125,36 +192,6 @@ class AIAssistantUI(QWidget):
             return messages
         else:
             return []
-
-    def init_ui(self):
-        
-        # Set up the layout and components
-        layout = QVBoxLayout()
-
-        title = QLabel("AI Assistant")
-        layout.addWidget(title)
-
-        input_label = QLabel("Enter your query:")
-        layout.addWidget(input_label)
-
-        self.text_input = QLineEdit()
-        layout.addWidget(self.text_input)
-        self.text_input.installEventFilter(self)  # Install event filter to listen for Enter key press
-
-        response_label = QLabel("Assistant's response:")
-        layout.addWidget(response_label)
-
-        self.text_response = QTextEdit()
-        self.text_response.setReadOnly(True)
-        layout.addWidget(self.text_response)
-
-        send_button = QPushButton("Send")
-        layout.addWidget(send_button)
-        send_button.clicked.connect(self.send_query)
-
-        self.setLayout(layout)
-        self.setWindowTitle("Jarvis")
-        self.setGeometry(300, 300, 400, 300)
         
     def get_response(self, user_id, user_input):
 
@@ -192,21 +229,26 @@ class AIAssistantUI(QWidget):
         # Placeholder for processing the query and receiving a response
         user_query = self.text_input.text()
         assistant_response = self.get_response(0, user_query)
-        
-        
-        for command in ast.literal_eval(assistant_response)['tasks']:
-            # print(command)
-            self.run_command(command)
-            self.text_response.setPlainText(command)
-            # self.text_input.clear()
-        
-    def run_command(self, command):
 
-        # Change the working directory to the selected directory
-        os.chdir(self.current_directory)
+
+    def run_command(self, fileType, command):
+        if fileType == 'folder':
+            cmd = f'mkdir {command}'
+        else:
+            cmd = f'type nul > {command}'
         
-        # Run the command using subprocess
-        subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        stdout, stderr = process.communicate()
+
+        if process.returncode == 0:
+            print("Command executed successfully!")
+            print("Output:\n", stdout.decode())
+        else:
+            print(cmd)
+            print("An error occurred while executing the command.")
+            print("Error:\n", stderr.decode())
+        
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
