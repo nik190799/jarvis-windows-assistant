@@ -3,6 +3,7 @@ import os
 import subprocess
 from PyQt5.QtCore import Qt, QEvent, pyqtSignal, pyqtSlot, QThread
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton, QProgressDialog, QHBoxLayout
+from PyQt5.QtGui import QFont, QColor
 import openai
 import json
 import ast
@@ -26,7 +27,7 @@ class AIAssistantUI(QWidget):
     def __init__(self):
         super().__init__()
         #self.current_directory = os.getcwd()
-        self.current_directory = 'test\\GPT'
+        self.current_directory = 'test\\Documents\\GPT'
         self.default_manager_path = 'test/Windows Assistant/ModelDatasets/messages_android.json'
         self.default_dev1_path = 'test/Windows Assistant/ModelDatasets/cmdDev1.json'
         self.default_dev2_path = 'test/Windows Assistant/ModelDatasets/cmdDev1.json'
@@ -39,30 +40,35 @@ class AIAssistantUI(QWidget):
         self.start_get_tasks_value_thread()
         
         
+    from PyQt5.QtCore import Qt
+
     def init_ui(self):
         # Set up the layout and components
         main_layout = QVBoxLayout()
 
-        title = QLabel("AI Assistant")
-        main_layout.addWidget(title)
-
-        response_label = QLabel("Assistant's response:")
+        response_label = QLabel("Developer Console:")
+        response_label_font = QFont("Arial", 12)
+        response_label.setFont(response_label_font)
         main_layout.addWidget(response_label)
 
         self.text_response = QTextEdit()
         self.text_response.setReadOnly(True)
+        self.text_response.setFont(QFont("Arial", 12))
         main_layout.addWidget(self.text_response)
 
         input_layout = QHBoxLayout()
 
-        input_label = QLabel("Enter your query:")
+        input_label = QLabel("Enter command:")
+        input_label.setFont(QFont("Arial", 14))
         input_layout.addWidget(input_label)
 
         self.text_input = QLineEdit()
+        self.text_input.setFont(QFont("Arial", 12))
         input_layout.addWidget(self.text_input)
         self.text_input.installEventFilter(self)  # Install event filter to listen for Enter key press
 
         send_button = QPushButton("Send")
+        send_button.setFont(QFont("Arial", 12))
         input_layout.addWidget(send_button)
         send_button.clicked.connect(self.send_query)
 
@@ -70,6 +76,7 @@ class AIAssistantUI(QWidget):
         self.setLayout(main_layout)
         self.setWindowTitle("Jarvis")
         self.setGeometry(500, 500, 600, 500)
+
         
     def formatDirectoryLocation(self, command):
         replaced_command = command.replace('root190799', self.current_directory)
@@ -108,26 +115,34 @@ class AIAssistantUI(QWidget):
         elements.append({"role": "user", "content": str(new_item)})
         self.save_messages(dev_id, elements)
         
-        self.text_response.append(f"adding dev{dev_id} user inputs...")
+        print(f"adding dev{dev_id} user inputs...")
         
         response = self.get_response(dev_id, str(new_item))
         
         elements.append({"role": "assistant", "content": response})
         self.save_messages(dev_id, elements)
-        self.text_response.append(f"dev{dev_id} tasks completed...")
+        print(f"dev{dev_id} tasks completed...")
         
         commands = ast.literal_eval(response)
         
-        print(type(commands))
-        print(commands)
-        
         for command in commands:
             replaced_command = self.formatDirectoryLocation(command['location'])
-
             if command['code'] != 'No code required':
-                for line in command['code'].split('\n'):
-                    with open(replaced_command, 'a') as file:
-                        file.write(line)
+                filename = replaced_command.split('\\')[-1]
+                try:
+                    for line in command['code'].split('\n'):
+                        with open(replaced_command, 'a') as file:
+                            file.write(line)
+                    self.text_response.append(f"Jarvis > Wrote {filename} file")
+                    time.sleep(1)
+                except Exception as e:
+                    print(e)
+                
+                    
+#                     self.text_response.setAlignment(Qt.AlignLeft)
+#                     self.text_response.setTextColor(QColor(0, 128, 0))
+#                     self.text_response.append(f"AI > Wrote {filename} file")
+
             else:
                 self.run_command(command['fileType'],replaced_command)
 
@@ -143,7 +158,13 @@ class AIAssistantUI(QWidget):
             if elements_manager[-1]['role'] == 'assistant':
                 content = ast.literal_eval(elements_manager[-1]['content'])
                 if content['status'] == 0:
-                    self.text_response.append(f"Total {len(content['tasks'])} tasks created.")
+                    
+                    
+                    self.text_response.setAlignment(Qt.AlignLeft)
+                    self.text_response.setTextColor(QColor(0, 128, 0))
+#                     self.text_response.append(f"AI > Total {len(content['tasks'])} tasks created.")
+#                     time.sleep(1)
+                    
                     self.user_inputs_handler = False
                     
                     # Call the distribute_tasks function
@@ -153,8 +174,8 @@ class AIAssistantUI(QWidget):
                     
                     self.save_messages(0, elements_manager)
                     
-                else:
-                    print("No user input...")
+#                 else:
+                    
     
                 self.user_inputs_handler = True
             time.sleep(5)
@@ -228,6 +249,14 @@ class AIAssistantUI(QWidget):
     def send_query(self):
         # Placeholder for processing the query and receiving a response
         user_query = self.text_input.text()
+        
+        self.text_response.setTextColor(QColor(0, 0, 255))
+        self.text_response.append("User > " + user_query)
+        time.sleep(2)
+
+        # Clear the input text box
+        self.text_input.clear()
+        
         assistant_response = self.get_response(0, user_query)
 
 
@@ -241,14 +270,15 @@ class AIAssistantUI(QWidget):
         stdout, stderr = process.communicate()
 
         if process.returncode == 0:
-            print("Command executed successfully!")
-            print("Output:\n", stdout.decode())
+            filename = command.split('\\')[-1]
+            self.text_response.setTextColor(QColor(0, 128, 0))
+            self.text_response.append(f"Jarvis > Created {filename} {fileType}")
+            time.sleep(1)
         else:
-            print(cmd)
-            print("An error occurred while executing the command.")
+            self.text_response.setTextColor(QColor(0, 128, 0))
+            self.text_response.append(f"Jarvis > command: {cmd}, Error: {stderr.decode()}")
+            time.sleep(1)
             print("Error:\n", stderr.decode())
-        
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
